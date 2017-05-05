@@ -222,7 +222,9 @@ module DeviseTokenAuth::Concerns::User
   end
 
 
-  def extend_batch_buffer(token, client_id)
+  def extend_batch_buffer(token, client_id='default')
+    client_id ||= 'default'
+
     self.tokens[client_id]['updated_at'] = Time.now
 
     return build_auth_header(token, client_id)
