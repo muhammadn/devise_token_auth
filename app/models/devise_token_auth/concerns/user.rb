@@ -194,13 +194,8 @@ module DeviseTokenAuth::Concerns::User
     DeviseTokenAuth::Url.generate(base_url, args)
   end
 
-  def extend_batch_buffer(token, client_id)
-    if client_id != nil
-      self.tokens[client_id]['updated_at'] = Time.now
-    else
-       self.tokens['default']['updated_at'] = Time.now
-    end
-
+  def extend_batch_buffer(token, client_id = 'default')
+    self.tokens[client_id]['updated_at'] = Time.now
     update_auth_header(token, client_id)
   end
 
