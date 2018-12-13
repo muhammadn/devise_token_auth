@@ -1,6 +1,7 @@
+# frozen_string_literal: true
+
 module DeviseTokenAuth
   class OmniauthCallbacksController < DeviseTokenAuth::ApplicationController
-
     attr_reader :auth_params
     skip_before_action :set_user_by_token, raise: false
     skip_after_action :update_auth_header
@@ -27,17 +28,16 @@ module DeviseTokenAuth
 
     def omniauth_success
       get_resource_from_auth_hash
-      create_token_info
       set_token_on_resource
       create_auth_params
 
-      if resource_class.devise_modules.include?(:confirmable)
+      if confirmable_enabled?
         # don't send confirmation email!!!
         @resource.skip_confirmation!
       end
 
       sign_in(:user, @resource, store: false, bypass: false)
-
+      
       @resource.save!
 
       yield @resource if block_given?
@@ -47,7 +47,7 @@ module DeviseTokenAuth
 
     def omniauth_failure
       @error = params[:message]
-      render_data_or_redirect('authFailure', {error: @error})
+      render_data_or_redirect('authFailure', error: @error)
     end
 
     protected
@@ -61,7 +61,7 @@ module DeviseTokenAuth
     # after use.  In the failure case, finally, the omniauth params
     # are added as query params in our monkey patch to OmniAuth in engine.rb
     def omniauth_params
-      if !defined?(@_omniauth_params)
+      unless defined?(@_omniauth_params)
         if request.env['omniauth.params'] && request.env['omniauth.params'].any?
           @_omniauth_params = request.env['omniauth.params']
         elsif session['dta.omniauth.params'] && session['dta.omniauth.params'].any?
@@ -79,25 +79,19 @@ module DeviseTokenAuth
 
     # break out provider attribute assignment for easy method extension
     def assign_provider_attrs(user, auth_hash)
-      user.assign_attributes({
-        nickname: auth_hash['info']['nickname'],
-        name:     auth_hash['info']['name'],
-        image:    auth_hash['info']['image'],
-        email:    auth_hash['info']['email']
-      })
+      attrs = auth_hash['info'].slice(*user.attribute_names)
+      user.assign_attributes(attrs)
     end
 
     # derive allowed params from the standard devise parameter sanitizer
     def whitelisted_params
       whitelist = params_for_resource(:sign_up)
 
-      whitelist.inject({}){|coll, key|
+      whitelist.inject({}) do |coll, key|
         param = omniauth_params[key.to_s]
-        if param
-          coll[key] = param
-        end
+        coll[key] = param if param
         coll
-      }
+      end
     end
 
     def resource_class(mapping = nil)
@@ -106,7 +100,7 @@ module DeviseTokenAuth
       elsif params['resource_class']
         params['resource_class'].constantize
       else
-        raise "No resource_class found"
+        raise 'No resource_class found'
       end
     end
 
@@ -154,18 +148,10 @@ module DeviseTokenAuth
 
     def set_random_password
       # set crazy password for new oauth users. this is only used to prevent
-        # access via email sign-in.
-        p = SecureRandom.urlsafe_base64(nil, false)
-        @resource.password = p
-        @resource.password_confirmation = p
-    end
-
-    def create_token_info
-      # create token info
-      @client_id = SecureRandom.urlsafe_base64(nil, false)
-      @token     = SecureRandom.urlsafe_base64(nil, false)
-      @expiry    = (Time.now + DeviseTokenAuth.token_lifespan).to_i
-      @config    = omniauth_params['config_name']
+      # access via email sign-in.
+      p = SecureRandom.urlsafe_base64(nil, false)
+      @resource.password = p
+      @resource.password_confirmation = p
     end
 
     def create_auth_params
@@ -181,17 +167,13 @@ module DeviseTokenAuth
     end
 
     def set_token_on_resource
-      @resource.tokens[@client_id] = {
-        token: BCrypt::Password.create(@token),
-        expiry: @expiry
-      }
+      @config = omniauth_params['config_name']
+      @client_id, @token, @expiry = @resource.create_token
     end
 
     def render_data(message, data)
-      @data = data.merge({
-        message: message
-      })
-      render :layout => nil, :template => "devise_token_auth/omniauth_external_window"
+      @data = data.merge(message: message)
+      render layout: nil, template: 'devise_token_auth/omniauth_external_window'
     end
 
     def render_data_or_redirect(message, data, user_data = {})
@@ -222,22 +204,22 @@ module DeviseTokenAuth
     end
 
     def fallback_render(text)
-        render inline: %Q|
+        render inline: %Q(
 
             <html>
                     <head></head>
                     <body>
                             #{text}
                     </body>
-            </html>|
+            </html>)
     end
 
     def get_resource_from_auth_hash
       # find or create user by provider and provider uid
-      @resource = resource_class.where({
-        uid:      auth_hash['uid'],
+      @resource = resource_class.where(
+        uid: auth_hash['uid'],
         provider: auth_hash['provider']
-      }).first_or_initialize
+      ).first_or_initialize
 
       if @resource.new_record?
         @oauth_registration = true
@@ -253,6 +235,5 @@ module DeviseTokenAuth
 
       @resource
     end
-
   end
 end
