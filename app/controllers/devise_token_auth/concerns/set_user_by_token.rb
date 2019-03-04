@@ -145,7 +145,7 @@ module DeviseTokenAuth::Concerns::SetUserByToken
     auth_header = {}
     # extend expiration of batch buffer to account for the duration of
     # this request
-    if @is_batch_request
+    if @is_batch_request && !@token.nil? && !@client_id.nil?
       auth_header = @resource.extend_batch_buffer(@token, @client_id)
 
       # Do not return token for batch requests to avoid invalidated
